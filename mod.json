@@ -1,10 +1,24 @@
 {
 	"geode": "5.11.1",
-	"gd": { "win": "2.2081", "android": "2.2081", "mac": "2.2081", "ios": "2.2081" },
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
 	"id": "cookiegamer.grind-list",
 	"name": "Grind List",
-	"version": "v1.0.0",
+	"version": "v1.1.0",
 	"developer": "Cookie Gamer",
 	"description": "Keep a list of the online levels you're grinding, one tap from the main menu.",
-	"resources": { "sprites": ["resources/*.png"] }
+	"resources": {
+		"sprites": [
+			"resources/*.png"
+		]
+	},
+	"dependencies": {
+		"geode.node-ids": ">=1.23.3",
+		"prevter.imageplus": ">=1.1.1",
+		"cdc.level_thumbnails": ">=2.6.1"
+	}
 }

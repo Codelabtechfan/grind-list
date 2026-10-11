@@ -121,3 +121,17 @@ GJGameLevel* grind::levelFor(GrindEntry const& e) {
     l->m_creatorName = e.creator;
     return l;
 }
+
+void grind::move(int id, int delta) {
+    auto list = loadRaw();
+    for (int i = 0; i < (int)list.size(); i++) {
+        if (list[i].id != id) continue;
+        int j = std::clamp(i + delta, 0, (int)list.size() - 1);
+        if (j == i) return;
+        auto e = list[i];
+        list.erase(list.begin() + i);
+        list.insert(list.begin() + j, e);
+        saveRaw(list);
+        return;
+    }
+}

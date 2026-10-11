@@ -11,6 +11,7 @@ namespace grind {
     bool has(int id);
     void add(GJGameLevel* level);
     void remove(int id);
+    void move(int id, int delta);
     void updateFrom(GJGameLevel* level); // refresh cached data if in list
     bool isOnline(GJGameLevel* level);
     GJGameLevel* levelFor(GrindEntry const& e);

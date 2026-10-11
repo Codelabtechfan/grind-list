@@ -4,6 +4,52 @@
 using namespace geode::prelude;
 
 static constexpr int PER_PAGE = 5;
+static constexpr float THUMB_W = 60.f, THUMB_H = 34.f;
+static std::unordered_map<int, Ref<CCTexture2D>> s_thumbs;
+static std::unordered_set<int> s_missing;
+
+static std::string thumbBase() {
+    if (auto lt = Loader::get()->getLoadedMod("cdc.level_thumbnails")) {
+        auto v = lt->getSettingValue<std::string>("level-thumbnails-api");
+        while (!v.empty() && v.back() == '/') v.pop_back();
+        if (!v.empty()) return v;
+    }
+    return "https://levelthumbs.prevter.me";
+}
+
+static void setThumb(CCNode* slot, CCTexture2D* tex) {
+    slot->removeAllChildren();
+    auto spr = CCSprite::createWithTexture(tex);
+    if (!spr) return;
+    auto sz = spr->getContentSize();
+    float sc = std::min(THUMB_W / sz.width, THUMB_H / sz.height);
+    spr->setScale(sc);
+    spr->setPosition({THUMB_W / 2, THUMB_H / 2});
+    slot->addChild(spr);
+}
+
+void GrindLayer::loadThumb(int id, CCNode* slot) {
+    if (auto it = s_thumbs.find(id); it != s_thumbs.end()) { setThumb(slot, it->second); return; }
+    if (s_missing.count(id)) return;
+    if (m_thumbTasks.count(id)) return;
+    auto holder = std::make_unique<async::TaskHolder<web::WebResponse>>();
+    auto self = this; // holder is owned by this layer, so the task is cancelled if it goes away
+    holder->spawn(web::WebRequest().get(fmt::format("{}/thumbnail/{}/small", thumbBase(), id)),
+        [self, id](web::WebResponse res) {
+            if (!res.ok()) { s_missing.insert(id); return; }
+            auto data = res.data();
+            auto img = new CCImage();
+            if (!img->initWithImageData(data.data(), data.size())) { delete img; s_missing.insert(id); return; }
+            auto tex = new CCTexture2D();
+            if (!tex->initWithImage(img)) { delete img; tex->release(); s_missing.insert(id); return; }
+            delete img;
+            s_thumbs[id] = tex;
+            tex->release();
+            self->refresh();
+        });
+    m_thumbTasks[id] = std::move(holder);
+}
+
 
 GrindLayer* GrindLayer::create() {
     auto ret = new GrindLayer();
@@ -117,43 +163,73 @@ void GrindLayer::refresh() {
         row->setPosition({win.width / 2, y});
         m_listNode->addChild(row);
 
+        auto slot = CCLayerColor::create({0, 0, 0, 120}, THUMB_W, THUMB_H);
+        slot->setPosition({left + 4, y - THUMB_H / 2});
+        m_listNode->addChild(slot);
+        auto ph = CCLabelBMFont::create(s_missing.count(e.id) ? "No image" : "...", "chatFont.fnt");
+        ph->setScale(0.45f);
+        ph->setPosition({THUMB_W / 2, THUMB_H / 2});
+        slot->addChild(ph);
+        loadThumb(e.id, slot);
+        left += 64;
+
         auto face = GJDifficultySprite::create(e.face, GJDifficultyName::Short);
-        face->setScale(0.6f);
-        face->setPosition({left + 22, y + 2});
+        face->setScale(0.5f);
+        face->setPosition({left + 15, y + 2});
         m_listNode->addChild(face);
 
         auto name = CCLabelBMFont::create(e.name.c_str(), "bigFont.fnt");
         name->setAnchorPoint({0, 0.5f});
-        name->limitLabelWidth(170, 0.5f, 0.1f);
-        name->setPosition({left + 45, y + 10});
+        name->limitLabelWidth(110, 0.5f, 0.1f);
+        name->setPosition({left + 32, y + 10});
         m_listNode->addChild(name);
 
         auto creator = CCLabelBMFont::create(fmt::format("by {}", e.creator).c_str(), "goldFont.fnt");
         creator->setAnchorPoint({0, 0.5f});
-        creator->limitLabelWidth(120, 0.4f, 0.1f);
-        creator->setPosition({left + 45 + name->getScaledContentSize().width + 5, y + 10});
+        creator->limitLabelWidth(60, 0.4f, 0.1f);
+        creator->setPosition({left + 32 + name->getScaledContentSize().width + 5, y + 10});
         m_listNode->addChild(creator);
 
         auto stats = CCLabelBMFont::create(
-            fmt::format("Normal {}%   Practice {}%   Attempts {}", e.normal, e.practice, e.attempts).c_str(), "chatFont.fnt");
+            fmt::format("Normal {}%  Practice {}%  Att {}", e.normal, e.practice, e.attempts).c_str(), "chatFont.fnt");
         stats->setAnchorPoint({0, 0.5f});
         stats->setScale(0.6f);
-        stats->setPosition({left + 45, y - 9});
+        stats->setPosition({left + 32, y - 9});
         m_listNode->addChild(stats);
 
         auto viewSpr = ButtonSprite::create("View", "bigFont.fnt", "GJ_button_01.png", 0.6f);
         viewSpr->setScale(0.6f);
         auto view = CCMenuItemSpriteExtra::create(viewSpr, this, menu_selector(GrindLayer::onView));
         view->setTag(e.id);
-        view->setPosition({win.width / 2 + 120, y});
+        view->setPosition({win.width / 2 + 100, y});
         m_listMenu->addChild(view);
 
         auto delSpr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
         delSpr->setScale(0.6f);
         auto del = CCMenuItemSpriteExtra::create(delSpr, this, menu_selector(GrindLayer::onRemove));
         del->setTag(e.id);
-        del->setPosition({win.width / 2 + 163, y});
+        del->setPosition({win.width / 2 + 138, y});
         m_listMenu->addChild(del);
+
+        auto mk = [&](float rot, SEL_MenuHandler sel, float dy, float sc) {
+            auto s = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+            s->setRotation(rot);
+            s->setScale(sc);
+            auto b = CCMenuItemSpriteExtra::create(s, this, sel);
+            b->setTag(e.id);
+            b->setPosition({win.width / 2 + 166, y + dy});
+            m_listMenu->addChild(b);
+        };
+        if (idx > 0) mk(90.f, menu_selector(GrindLayer::onUp), 10.f, 0.32f);
+        if (idx < (int)list.size() - 1) mk(-90.f, menu_selector(GrindLayer::onDown), -10.f, 0.32f);
+        if (idx > 0) {
+            auto ts = ButtonSprite::create("Top", "goldFont.fnt", "GJ_button_04.png", 0.5f);
+            ts->setScale(0.45f);
+            auto tb = CCMenuItemSpriteExtra::create(ts, this, menu_selector(GrindLayer::onTop));
+            tb->setTag(e.id);
+            tb->setPosition({win.width / 2 + 119, y + 15});
+            m_listMenu->addChild(tb);
+        }
     }
 }
 
@@ -184,6 +260,9 @@ void GrindLayer::onAdd(CCObject*) {
     Notification::create("Search for a level, then press + to add it", NotificationIcon::Info)->show();
 }
 
+void GrindLayer::onUp(CCObject* s) { grind::move(static_cast<CCNode*>(s)->getTag(), -1); refresh(); }
+void GrindLayer::onDown(CCObject* s) { grind::move(static_cast<CCNode*>(s)->getTag(), 1); refresh(); }
+void GrindLayer::onTop(CCObject* s) { grind::move(static_cast<CCNode*>(s)->getTag(), -100000); m_page = 0; refresh(); }
 void GrindLayer::onPrev(CCObject*) { m_page--; refresh(); }
 void GrindLayer::onNext(CCObject*) { m_page++; refresh(); }
 
