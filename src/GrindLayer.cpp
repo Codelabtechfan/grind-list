@@ -8,13 +8,23 @@ static constexpr float THUMB_W = 60.f, THUMB_H = 34.f;
 static std::unordered_map<int, Ref<CCTexture2D>> s_thumbs;
 static std::unordered_set<int> s_missing;
 
-static std::string thumbBase() {
-    if (auto lt = Loader::get()->getLoadedMod("cdc.level_thumbnails")) {
-        auto v = lt->getSettingValue<std::string>("level-thumbnails-api");
-        while (!v.empty() && v.back() == '/') v.pop_back();
-        if (!v.empty()) return v;
+// Thumbnails are shown only when Level Thumbnails is actually loaded.
+// We never depend on that mod; if it isn't there, the list has no thumbnail slots.
+static bool levelThumbnailsLoaded() {
+    return Loader::get()->isModLoaded("cdc.level_thumbnails");
+}
+
+// Same URL scheme Level Thumbnails uses (including its API base and legacy-host setting).
+static std::string thumbUrl(int id) {
+    auto lt = Loader::get()->getLoadedMod("cdc.level_thumbnails");
+    if (!lt) return {};
+    auto base = lt->getSettingValue<std::string>("level-thumbnails-api");
+    while (!base.empty() && base.back() == '/') base.pop_back();
+    if (base.empty()) base = "https://levelthumbs.prevter.me";
+    if (lt->getSettingValue<bool>("legacy-url")) {
+        return fmt::format("{}/{}.png", base, id);
     }
-    return "https://levelthumbs.prevter.me";
+    return fmt::format("{}/thumbnail/{}/small", base, id);
 }
 
 static void setThumb(CCNode* slot, CCTexture2D* tex) {
@@ -29,12 +39,15 @@ static void setThumb(CCNode* slot, CCTexture2D* tex) {
 }
 
 void GrindLayer::loadThumb(int id, CCNode* slot) {
+    if (!levelThumbnailsLoaded()) return;
     if (auto it = s_thumbs.find(id); it != s_thumbs.end()) { setThumb(slot, it->second); return; }
     if (s_missing.count(id)) return;
     if (m_thumbTasks.count(id)) return;
     auto holder = std::make_unique<async::TaskHolder<web::WebResponse>>();
     auto self = this; // holder is owned by this layer, so the task is cancelled if it goes away
-    holder->spawn(web::WebRequest().get(fmt::format("{}/thumbnail/{}/small", thumbBase(), id)),
+    auto url = thumbUrl(id);
+    if (url.empty()) return;
+    holder->spawn(web::WebRequest().get(url),
         [self, id](web::WebResponse res) {
             if (!res.ok()) { s_missing.insert(id); return; }
             auto data = res.data();
@@ -163,15 +176,18 @@ void GrindLayer::refresh() {
         row->setPosition({win.width / 2, y});
         m_listNode->addChild(row);
 
-        auto slot = CCLayerColor::create({0, 0, 0, 120}, THUMB_W, THUMB_H);
-        slot->setPosition({left + 4, y - THUMB_H / 2});
-        m_listNode->addChild(slot);
-        auto ph = CCLabelBMFont::create(s_missing.count(e.id) ? "No image" : "...", "chatFont.fnt");
-        ph->setScale(0.45f);
-        ph->setPosition({THUMB_W / 2, THUMB_H / 2});
-        slot->addChild(ph);
-        loadThumb(e.id, slot);
-        left += 64;
+        bool showThumbs = levelThumbnailsLoaded();
+        if (showThumbs) {
+            auto slot = CCLayerColor::create({0, 0, 0, 120}, THUMB_W, THUMB_H);
+            slot->setPosition({left + 4, y - THUMB_H / 2});
+            m_listNode->addChild(slot);
+            auto ph = CCLabelBMFont::create(s_missing.count(e.id) ? "No image" : "...", "chatFont.fnt");
+            ph->setScale(0.45f);
+            ph->setPosition({THUMB_W / 2, THUMB_H / 2});
+            slot->addChild(ph);
+            loadThumb(e.id, slot);
+            left += 64;
+        }
 
         auto face = GJDifficultySprite::create(e.face, GJDifficultyName::Short);
         face->setScale(0.5f);
@@ -180,7 +196,7 @@ void GrindLayer::refresh() {
 
         auto name = CCLabelBMFont::create(e.name.c_str(), "bigFont.fnt");
         name->setAnchorPoint({0, 0.5f});
-        name->limitLabelWidth(110, 0.5f, 0.1f);
+        name->limitLabelWidth(showThumbs ? 110.f : 174.f, 0.5f, 0.1f);
         name->setPosition({left + 32, y + 10});
         m_listNode->addChild(name);
 

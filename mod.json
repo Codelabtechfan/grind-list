@@ -8,7 +8,7 @@
 	},
 	"id": "cookiegamer.grind-list",
 	"name": "Grind List",
-	"version": "v1.1.1",
+	"version": "v1.2.0",
 	"developer": "Cookie Gamer",
 	"description": "Keep a list of the online levels you're grinding, one tap from the main menu.",
 	"resources": {
@@ -18,10 +18,6 @@
 	},
 	"dependencies": {
 		"geode.node-ids": ">=1.24.0-beta.1",
-		"prevter.imageplus": ">=1.2.2",
-		"cdc.level_thumbnails": {
-			"version": ">=2.6.1",
-			"importance": "recommended"
-		}
+		"prevter.imageplus": ">=1.2.2"
 	}
 }
